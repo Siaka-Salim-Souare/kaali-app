@@ -1,0 +1,21 @@
+{
+  "name": "Kaali - Carnet de dette",
+  "short_name": "Kaali",
+  "description": "Le carnet de dette digital pour boutiquiers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f6f5",
+  "theme_color": "#1a7a4c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

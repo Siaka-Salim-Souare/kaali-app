@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kaali - Carnet de dette digital</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#1a7a4c" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ECRAN DE CONNEXION -->
+  <div id="ecran-login" class="ecran">
+    <div class="carte-login">
+      <h1>🏪 Kaali</h1>
+      <p class="sous-titre">Le carnet de dette de votre boutique</p>
+
+      <input type="tel" id="login-telephone" placeholder="Numéro de téléphone" />
+      <input type="password" id="login-pin" placeholder="Code PIN (4 chiffres)" maxlength="4" inputmode="numeric" />
+
+      <button id="btn-connexion" class="btn btn-principal">Se connecter</button>
+
+      <div class="separateur">ou</div>
+
+      <input type="text" id="signup-nom" placeholder="Nom de votre boutique" />
+      <button id="btn-creation" class="btn btn-secondaire">Créer ma boutique</button>
+
+      <p id="login-erreur" class="message-erreur"></p>
+    </div>
+  </div>
+
+  <!-- ECRAN PRINCIPAL -->
+  <div id="ecran-principal" class="ecran cache">
+    <header class="entete">
+      <div>
+        <h2 id="nom-boutique-affiche">Ma boutique</h2>
+        <p class="total-du">Total à recevoir : <strong id="total-du">0</strong> GNF</p>
+      </div>
+      <button id="btn-deconnexion" class="btn-icone">⏻</button>
+    </header>
+
+    <div class="barre-action">
+      <button id="btn-nouveau-client" class="btn btn-principal btn-large">+ Ajouter un client</button>
+    </div>
+
+    <div id="indicateur-hors-ligne" class="bandeau-hors-ligne cache">
+      📡 Hors ligne — les données seront synchronisées au retour du réseau
+    </div>
+
+    <div id="liste-clients" class="liste-clients">
+      <!-- Rempli dynamiquement par app.js -->
+    </div>
+  </div>
+
+  <!-- MODAL NOUVEAU CLIENT -->
+  <div id="modal-nouveau-client" class="modal cache">
+    <div class="modal-contenu">
+      <h3>Nouveau client</h3>
+      <input type="text" id="nouveau-client-nom" placeholder="Nom du client" />
+      <input type="tel" id="nouveau-client-telephone" placeholder="Téléphone (optionnel)" />
+      <input type="number" id="nouveau-client-montant" placeholder="Montant dû (GNF)" inputmode="numeric" />
+      <div class="modal-boutons">
+        <button id="btn-annuler-client" class="btn btn-annuler">Annuler</button>
+        <button id="btn-valider-client" class="btn btn-principal">Ajouter</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DETAIL CLIENT -->
+  <div id="modal-detail-client" class="modal cache">
+    <div class="modal-contenu">
+      <h3 id="detail-client-nom">Client</h3>
+      <p class="detail-solde">Doit : <strong id="detail-client-solde">0</strong> GNF</p>
+
+      <div id="detail-historique" class="historique">
+        <!-- Historique des transactions -->
+      </div>
+
+      <div class="ligne-transaction">
+        <input type="number" id="transaction-montant" placeholder="Montant (GNF)" inputmode="numeric" />
+        <select id="transaction-type">
+          <option value="credit">Nouveau crédit</option>
+          <option value="paiement">Paiement reçu</option>
+        </select>
+      </div>
+      <button id="btn-valider-transaction" class="btn btn-principal btn-large">Enregistrer</button>
+
+      <button id="btn-relancer" class="btn btn-whatsapp btn-large">📱 Relancer sur WhatsApp</button>
+
+      <button id="btn-fermer-detail" class="btn btn-annuler btn-large">Fermer</button>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
