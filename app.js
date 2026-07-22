@@ -1,16 +1,15 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// ⚠️ Remplace ces deux valeurs par les tiennes si tu changes de projet Supabase
 const SUPABASE_URL = 'https://dohdwtwjqvlbadqwhdev.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_KIvEiuKuo9CbtP2TJOGVtw_h_ZpcZXF';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // --- ETAT DE L'APPLICATION ---
-let boutiqueActuelle = null; // { id, nom, telephone }
-let clients = [];
+let sessionToken = null;
+let boutiqueNom = null;
+let clients = []; // { id, nom, telephone, solde }
 let clientSelectionne = null;
-let transactionsClientSelectionne = [];
 
 // --- ELEMENTS DOM ---
 const ecranLogin = document.getElementById('ecran-login');
@@ -30,20 +29,21 @@ document.getElementById('btn-connexion').addEventListener('click', async () => {
     return;
   }
 
-  const { data, error } = await supabase
-    .from('boutiques')
-    .select('*')
-    .eq('telephone', telephone)
-    .eq('pin_code', pin)
-    .single();
+  const { data, error } = await supabase.rpc('connexion_boutique', {
+    p_telephone: telephone,
+    p_pin: pin
+  });
 
-  if (error || !data) {
+  if (error || !data || data.length === 0) {
     messageErreur.textContent = 'Numéro ou PIN incorrect.';
     return;
   }
 
-  boutiqueActuelle = data;
-  localStorage.setItem('kaali_boutique_id', data.id);
+  const resultat = data[0];
+  sessionToken = resultat.session_token;
+  boutiqueNom = resultat.boutique_nom;
+  localStorage.setItem('kaali_session_token', sessionToken);
+  localStorage.setItem('kaali_boutique_nom', boutiqueNom);
   demarrerApp();
 });
 
@@ -59,27 +59,31 @@ document.getElementById('btn-creation').addEventListener('click', async () => {
     return;
   }
 
-  const { data, error } = await supabase
-    .from('boutiques')
-    .insert({ nom, telephone, pin_code: pin })
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc('creer_boutique', {
+    p_nom: nom,
+    p_telephone: telephone,
+    p_pin: pin
+  });
 
-  if (error) {
-    messageErreur.textContent = error.message.includes('duplicate')
+  if (error || !data || data.length === 0) {
+    messageErreur.textContent = error?.message?.includes('duplicate')
       ? 'Ce numéro est déjà enregistré. Connecte-toi plutôt.'
-      : 'Erreur : ' + error.message;
+      : 'Erreur : ' + (error?.message || 'inconnue');
     return;
   }
 
-  boutiqueActuelle = data;
-  localStorage.setItem('kaali_boutique_id', data.id);
+  const resultat = data[0];
+  sessionToken = resultat.session_token;
+  boutiqueNom = resultat.boutique_nom;
+  localStorage.setItem('kaali_session_token', sessionToken);
+  localStorage.setItem('kaali_boutique_nom', boutiqueNom);
   demarrerApp();
 });
 
 document.getElementById('btn-deconnexion').addEventListener('click', () => {
-  localStorage.removeItem('kaali_boutique_id');
-  boutiqueActuelle = null;
+  localStorage.removeItem('kaali_session_token');
+  localStorage.removeItem('kaali_boutique_nom');
+  sessionToken = null;
   ecranPrincipal.classList.add('cache');
   ecranLogin.classList.remove('cache');
 });
@@ -89,64 +93,50 @@ document.getElementById('btn-deconnexion').addEventListener('click', () => {
 async function demarrerApp() {
   ecranLogin.classList.add('cache');
   ecranPrincipal.classList.remove('cache');
-  document.getElementById('nom-boutique-affiche').textContent = boutiqueActuelle.nom;
+  document.getElementById('nom-boutique-affiche').textContent = boutiqueNom;
   await chargerClients();
 }
 
-// Reconnexion automatique si déjà connecté précédemment
 async function tenterReconnexionAuto() {
-  const idSauvegarde = localStorage.getItem('kaali_boutique_id');
-  if (!idSauvegarde) return;
+  const tokenSauvegarde = localStorage.getItem('kaali_session_token');
+  const nomSauvegarde = localStorage.getItem('kaali_boutique_nom');
+  if (!tokenSauvegarde) return;
 
-  const { data, error } = await supabase
-    .from('boutiques')
-    .select('*')
-    .eq('id', idSauvegarde)
-    .single();
+  sessionToken = tokenSauvegarde;
+  boutiqueNom = nomSauvegarde;
 
-  if (data && !error) {
-    boutiqueActuelle = data;
-    demarrerApp();
+  // On vérifie que la session est toujours valide en tentant de charger les clients
+  const { error } = await supabase.rpc('lister_clients', { p_token: sessionToken });
+  if (error) {
+    // Session expirée ou invalide -> retour à l'écran de connexion
+    sessionToken = null;
+    localStorage.removeItem('kaali_session_token');
+    localStorage.removeItem('kaali_boutique_nom');
+    return;
   }
+
+  demarrerApp();
 }
 
 // ============ GESTION DES CLIENTS ============
 
 async function chargerClients() {
-  const { data: clientsData, error } = await supabase
-    .from('clients')
-    .select('*')
-    .eq('boutique_id', boutiqueActuelle.id)
-    .order('created_at', { ascending: false });
+  const { data, error } = await supabase.rpc('lister_clients', { p_token: sessionToken });
 
   if (error) {
     console.error(error);
+    if (error.message.includes('Session invalide')) {
+      alert('Ta session a expiré, reconnecte-toi.');
+      document.getElementById('btn-deconnexion').click();
+    }
     return;
   }
 
-  clients = clientsData || [];
-
-  // Charger toutes les transactions de la boutique pour calculer les soldes
-  const idsClients = clients.map(c => c.id);
-  let transactions = [];
-  if (idsClients.length > 0) {
-    const { data: txData } = await supabase
-      .from('transactions')
-      .select('*')
-      .in('client_id', idsClients);
-    transactions = txData || [];
-  }
-
-  afficherListeClients(transactions);
+  clients = data || [];
+  afficherListeClients();
 }
 
-function calculerSolde(clientId, transactions) {
-  return transactions
-    .filter(t => t.client_id === clientId)
-    .reduce((total, t) => total + (t.type === 'credit' ? t.montant : -t.montant), 0);
-}
-
-function afficherListeClients(transactions) {
+function afficherListeClients() {
   const conteneur = document.getElementById('liste-clients');
   conteneur.innerHTML = '';
 
@@ -159,7 +149,7 @@ function afficherListeClients(transactions) {
   let totalGeneral = 0;
 
   clients.forEach(client => {
-    const solde = calculerSolde(client.id, transactions);
+    const solde = Number(client.solde);
     totalGeneral += solde;
 
     const carte = document.createElement('div');
@@ -171,7 +161,7 @@ function afficherListeClients(transactions) {
       </div>
       <div class="carte-client-solde ${solde <= 0 ? 'zero' : ''}">${solde.toLocaleString('fr-FR')} GNF</div>
     `;
-    carte.addEventListener('click', () => ouvrirDetailClient(client, transactions));
+    carte.addEventListener('click', () => ouvrirDetailClient(client));
     conteneur.appendChild(carte);
   });
 
@@ -201,23 +191,17 @@ document.getElementById('btn-valider-client').addEventListener('click', async ()
     return;
   }
 
-  const { data: nouveauClient, error } = await supabase
-    .from('clients')
-    .insert({ boutique_id: boutiqueActuelle.id, nom, telephone: telephone || null })
-    .select()
-    .single();
+  const { error } = await supabase.rpc('ajouter_client', {
+    p_token: sessionToken,
+    p_nom: nom,
+    p_telephone: telephone || null,
+    p_montant: montant
+  });
 
   if (error) {
     alert('Erreur : ' + error.message);
     return;
   }
-
-  await supabase.from('transactions').insert({
-    client_id: nouveauClient.id,
-    type: 'credit',
-    montant: montant,
-    note: 'Crédit initial'
-  });
 
   document.getElementById('modal-nouveau-client').classList.add('cache');
   await chargerClients();
@@ -225,26 +209,32 @@ document.getElementById('btn-valider-client').addEventListener('click', async ()
 
 // ============ MODAL DETAIL CLIENT ============
 
-async function ouvrirDetailClient(client, transactions) {
+async function ouvrirDetailClient(client) {
   clientSelectionne = client;
-  transactionsClientSelectionne = transactions.filter(t => t.client_id === client.id);
 
   document.getElementById('detail-client-nom').textContent = client.nom;
-  const solde = calculerSolde(client.id, transactions);
-  document.getElementById('detail-client-solde').textContent = solde.toLocaleString('fr-FR');
+  document.getElementById('detail-client-solde').textContent = Number(client.solde).toLocaleString('fr-FR');
+
+  const { data: transactions, error } = await supabase.rpc('historique_client', {
+    p_token: sessionToken,
+    p_client_id: client.id
+  });
 
   const historique = document.getElementById('detail-historique');
   historique.innerHTML = '';
-  transactionsClientSelectionne
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-    .forEach(t => {
-      const ligne = document.createElement('div');
-      ligne.className = 'ligne-historique';
-      const signe = t.type === 'credit' ? '+' : '−';
-      const date = new Date(t.created_at).toLocaleDateString('fr-FR');
-      ligne.innerHTML = `<span>${date} — ${t.type === 'credit' ? 'Crédit' : 'Paiement'}</span><span>${signe}${t.montant.toLocaleString('fr-FR')}</span>`;
-      historique.appendChild(ligne);
-    });
+
+  if (!error && transactions) {
+    transactions
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .forEach(t => {
+        const ligne = document.createElement('div');
+        ligne.className = 'ligne-historique';
+        const signe = t.type === 'credit' ? '+' : '−';
+        const date = new Date(t.created_at).toLocaleDateString('fr-FR');
+        ligne.innerHTML = `<span>${date} — ${t.type === 'credit' ? 'Crédit' : 'Paiement'}</span><span>${signe}${Number(t.montant).toLocaleString('fr-FR')}</span>`;
+        historique.appendChild(ligne);
+      });
+  }
 
   document.getElementById('transaction-montant').value = '';
   document.getElementById('modal-detail-client').classList.remove('cache');
@@ -263,10 +253,11 @@ document.getElementById('btn-valider-transaction').addEventListener('click', asy
     return;
   }
 
-  const { error } = await supabase.from('transactions').insert({
-    client_id: clientSelectionne.id,
-    type: type,
-    montant: montant
+  const { error } = await supabase.rpc('ajouter_transaction', {
+    p_token: sessionToken,
+    p_client_id: clientSelectionne.id,
+    p_type: type,
+    p_montant: montant
   });
 
   if (error) {
@@ -285,10 +276,9 @@ document.getElementById('btn-relancer').addEventListener('click', () => {
     alert('Ce client n\'a pas de numéro de téléphone enregistré.');
     return;
   }
-  const solde = calculerSolde(clientSelectionne.id, transactionsClientSelectionne);
   const numeroPropre = clientSelectionne.telephone.replace(/\s|\+/g, '');
   const message = encodeURIComponent(
-    `Bonjour ${clientSelectionne.nom}, vous devez ${solde.toLocaleString('fr-FR')} GNF à ${boutiqueActuelle.nom}. Merci de régler dès que possible.`
+    `Bonjour ${clientSelectionne.nom}, vous devez ${Number(clientSelectionne.solde).toLocaleString('fr-FR')} GNF à ${boutiqueNom}. Merci de régler dès que possible.`
   );
   window.open(`https://wa.me/${numeroPropre}?text=${message}`, '_blank');
 });
@@ -304,7 +294,7 @@ function mettreAJourIndicateurReseau() {
 }
 window.addEventListener('online', () => {
   mettreAJourIndicateurReseau();
-  if (boutiqueActuelle) chargerClients();
+  if (sessionToken) chargerClients();
 });
 window.addEventListener('offline', mettreAJourIndicateurReseau);
 mettreAJourIndicateurReseau();
